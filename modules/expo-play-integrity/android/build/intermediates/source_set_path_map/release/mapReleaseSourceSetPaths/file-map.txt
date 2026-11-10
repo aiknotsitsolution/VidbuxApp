@@ -1,0 +1,10 @@
+expo.modules.playintegrity.expo-play-integrity-pngs-0 C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\generated\res\pngs\release
+expo.modules.playintegrity.expo-play-integrity-resValues-1 C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\generated\res\resValues\release
+expo.modules.playintegrity.expo-play-integrity-mergeReleaseResources-2 C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\incremental\release\mergeReleaseResources\merged.dir
+expo.modules.playintegrity.expo-play-integrity-mergeReleaseResources-3 C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\incremental\release\mergeReleaseResources\stripped.dir
+expo.modules.playintegrity.expo-play-integrity-release-4 C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\merged_res\release\mergeReleaseResources
+expo.modules.playintegrity.expo-play-integrity-main-5 C:\RN\Vidbuxapp\modules\expo-play-integrity\android\src\main\res
+expo.modules.playintegrity.expo-play-integrity-release-6 C:\RN\Vidbuxapp\modules\expo-play-integrity\android\src\release\res
+expo.modules.playintegrity.expo-play-integrity-core-1.2.0-7 C:\Users\adity\.gradle\caches\9.3.1\transforms\00a732916af800788ef00b2941ade7de\workspace\transformed\core-1.2.0\res
+expo.modules.playintegrity.expo-play-integrity-core-common-2.0.4-8 C:\Users\adity\.gradle\caches\9.3.1\transforms\a5d4c0cd00b36b37e9b055492a6837be\workspace\transformed\core-common-2.0.4\res
+expo.modules.playintegrity.expo-play-integrity-play-services-basement-18.4.0-9 C:\Users\adity\.gradle\caches\9.3.1\transforms\cafc8bd16e819e127ddbb7d165afed3e\workspace\transformed\play-services-basement-18.4.0\res

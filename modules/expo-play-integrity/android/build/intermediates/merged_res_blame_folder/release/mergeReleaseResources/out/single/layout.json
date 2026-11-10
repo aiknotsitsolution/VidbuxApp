@@ -1,0 +1,14 @@
+[
+    {
+        "merged": "expo.modules.playintegrity.expo-play-integrity-release-3:/layout/custom_dialog.xml",
+        "source": "expo.modules.playintegrity.expo-play-integrity-core-1.2.0-6:/layout/custom_dialog.xml"
+    },
+    {
+        "merged": "expo.modules.playintegrity.expo-play-integrity-release-3:/layout/notification_template_part_time.xml",
+        "source": "expo.modules.playintegrity.expo-play-integrity-core-1.2.0-6:/layout/notification_template_part_time.xml"
+    },
+    {
+        "merged": "expo.modules.playintegrity.expo-play-integrity-release-3:/layout/notification_template_part_chronometer.xml",
+        "source": "expo.modules.playintegrity.expo-play-integrity-core-1.2.0-6:/layout/notification_template_part_chronometer.xml"
+    }
+]
