@@ -1377,9 +1377,6 @@ export function ProfileScreen() {
                 <Image
                   source={{ uri: getAvatarSource(user.avatar) }}
                   style={styles.avatar}
-                  onLoad={() =>
-                    console.log("[Profile] avatar loaded", user.avatar)
-                  }
                   onError={(event) =>
                     console.log("[Profile] avatar load failed", {
                       uri: user.avatar,

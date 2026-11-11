@@ -1,16 +1,16 @@
 -- Merging decision tree log ---
 manifest
-ADDED from C:\RN\MyApp\MyApp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18155105214672748932.xml:2:13-83
-INJECTED from C:\RN\MyApp\MyApp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18155105214672748932.xml:2:13-83
+ADDED from C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest16422626068475637569.xml:2:13-83
+INJECTED from C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest16422626068475637569.xml:2:13-83
 	package
-		INJECTED from C:\RN\MyApp\MyApp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18155105214672748932.xml
+		INJECTED from C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest16422626068475637569.xml
 	xmlns:android
-		ADDED from C:\RN\MyApp\MyApp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18155105214672748932.xml:2:23-81
+		ADDED from C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest16422626068475637569.xml:2:23-81
 uses-sdk
-INJECTED from C:\RN\MyApp\MyApp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18155105214672748932.xml reason: use-sdk injection requested
-INJECTED from C:\RN\MyApp\MyApp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18155105214672748932.xml
-INJECTED from C:\RN\MyApp\MyApp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18155105214672748932.xml
+INJECTED from C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest16422626068475637569.xml reason: use-sdk injection requested
+INJECTED from C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest16422626068475637569.xml
+INJECTED from C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest16422626068475637569.xml
 	android:targetSdkVersion
-		INJECTED from C:\RN\MyApp\MyApp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18155105214672748932.xml
+		INJECTED from C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest16422626068475637569.xml
 	android:minSdkVersion
-		INJECTED from C:\RN\MyApp\MyApp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18155105214672748932.xml
+		INJECTED from C:\RN\Vidbuxapp\modules\expo-play-integrity\android\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest16422626068475637569.xml

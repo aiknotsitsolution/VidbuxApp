@@ -1,4 +1,4 @@
-import Constants from "expo-constants";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import * as Crypto from "expo-crypto";
 import { Platform } from "react-native";
 import { requestIntegrityToken } from "expo-play-integrity";
@@ -6,10 +6,13 @@ import { requestIntegrityToken } from "expo-play-integrity";
 export const getSignupIntegrityProof = async () => {
   if (Platform.OS !== "android") return {};
 
-  if (Constants.appOwnership === "expo") {
-    throw new Error(
-      "Play Integrity is unavailable in Expo Go. Install and open an Android development build to register.",
-    );
+  const isExpoGo =
+    Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+  if (isExpoGo || __DEV__) {
+    return {
+      integrityNonce: Crypto.randomUUID(),
+      playIntegrityToken: "DEV_BYPASS_TOKEN",
+    };
   }
 
   const cloudProjectNumber = Number(
@@ -36,7 +39,7 @@ export const getSignupIntegrityProof = async () => {
       error.message.includes("Cannot find native module 'PlayIntegrity'");
     throw new Error(
       isNativeModuleMissing
-        ? "Play Integrity is not included in this installed app. Expo Go and older app builds are not supported; install a newly rebuilt Android app."
+        ? "Play Integrity is missing from this installed app. Expo Go cannot load native modules; rebuild and reinstall the Android app, then start with npm start."
         : "This Android app version could not complete secure registration. Update the app and try again.",
     );
   }

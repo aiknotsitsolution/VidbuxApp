@@ -1,4 +1,5 @@
 import React, {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -278,7 +279,7 @@ const formatViews = (value: number) => {
 };
 
 const INITIAL_SHORTS_BATCH = 10;
-const PREFETCH_SHORTS_COUNT = 4;
+const NEXT_THUMBNAIL_PREFETCH_COUNT = 4;
 
 const fetchShortsPage = async (
   page: number,
@@ -325,7 +326,7 @@ const getGuestId = async () => {
    VIDEO COMPONENT
 ========================================================= */
 
-function ShortVideo({
+const ShortVideo = memo(function ShortVideo({
   item,
   isActive,
   muted,
@@ -334,7 +335,11 @@ function ShortVideo({
   item: ShortItem;
   isActive: boolean;
   muted: boolean;
-  onProgress: (currentTime: number, duration: number) => void;
+  onProgress: (
+    item: ShortItem,
+    currentTime: number,
+    duration: number,
+  ) => void;
 }) {
   const navigation = useNavigation<any>();
   const [paused, setPaused] = useState(false);
@@ -343,7 +348,10 @@ function ShortVideo({
   const player = useVideoPlayer(item.videoUrl, (videoPlayer) => {
     videoPlayer.loop = true;
     videoPlayer.muted = muted;
-    videoPlayer.bufferOptions = { minBufferForPlayback: 0.5 };
+    videoPlayer.bufferOptions = {
+      minBufferForPlayback: 2,
+      preferredForwardBufferDuration: 10,
+    };
     // Critical: without this, timeUpdate never fires
     videoPlayer.timeUpdateEventInterval = 0.5;
   });
@@ -410,14 +418,14 @@ function ShortVideo({
       const duration = Number(player.duration) || 0;
 
       if (duration > 0) {
-        onProgress(currentTime, duration);
+        onProgress(item, currentTime, duration);
       }
     });
 
     return () => {
       subscription?.remove();
     };
-  }, [player, onProgress]);
+  }, [item, onProgress, player]);
 
   if (!item.videoUrl) {
     return (
@@ -440,7 +448,7 @@ function ShortVideo({
       <VideoView
         player={player}
         style={styles.video}
-        contentFit="cover"
+        contentFit="contain"
         surfaceType="textureView"
         nativeControls={false}
         onFirstFrameRender={() => setHasRenderedFirstFrame(true)}
@@ -449,7 +457,7 @@ function ShortVideo({
         <Image
           source={{ uri: item.thumbnail }}
           style={styles.video}
-          resizeMode="cover"
+          resizeMode="contain"
           pointerEvents="none"
         />
       ) : null}
@@ -473,7 +481,7 @@ function ShortVideo({
       )}
     </TouchableOpacity>
   );
-}
+});
 
 /* =========================================================
    COMMENT AVATAR
@@ -521,6 +529,7 @@ export default function ShortsScreen() {
   const shortsData = useAppSelector((state) => state.appVideos.shorts);
   const shortsPage = useAppSelector((state) => state.appVideos.shortsPage);
   const hasMore = useAppSelector((state) => state.appVideos.shortsHasMore);
+  const [pageHeight, setPageHeight] = useState(height);
 
   const [detailsItem, setDetailsItem] = useState<ShortItem | null>(null);
 
@@ -567,6 +576,11 @@ export default function ShortsScreen() {
   const listRef = useRef<FlatList<ShortItem>>(null);
   const loadRequestRef = useRef(0);
   const initialLoadStarted = useRef(false);
+  const inFlightPageRef = useRef<number | null>(null);
+  const shortsPageRef = useRef(shortsPage);
+  const hasMoreRef = useRef(hasMore);
+  shortsPageRef.current = shortsPage;
+  hasMoreRef.current = hasMore;
 
   useEffect(() => {
     if (!selectedVideo) return;
@@ -576,6 +590,7 @@ export default function ShortsScreen() {
     });
     dispatch(addSelectedShort(selected));
     setCurrentIndex(0);
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
     setLoading(false);
   }, [dispatch, selectedVideo]);
 
@@ -654,12 +669,13 @@ export default function ShortsScreen() {
 
   const loadShorts = useCallback(
     async (reset = false) => {
-      if (loadingMore && !reset) {
+      if (inFlightPageRef.current !== null || (!reset && !hasMoreRef.current)) {
         return;
       }
 
       const requestId = ++loadRequestRef.current;
-      const targetPage = reset ? 1 : shortsPage + 1;
+      const targetPage = reset ? 1 : shortsPageRef.current + 1;
+      inFlightPageRef.current = targetPage;
 
       try {
         if (reset) {
@@ -697,6 +713,8 @@ export default function ShortsScreen() {
         const nextBatch = normalizeVideoBatch(videos);
 
         if (!nextBatch.length) {
+          shortsPageRef.current = targetPage;
+          hasMoreRef.current = false;
           dispatch(
             mergeShortsPage({
               videos: [],
@@ -713,6 +731,17 @@ export default function ShortsScreen() {
           Number.isFinite(total) && total > 0
             ? targetPage * INITIAL_SHORTS_BATCH < total
             : videos.length === INITIAL_SHORTS_BATCH;
+        shortsPageRef.current = targetPage;
+        hasMoreRef.current = hasMoreResults;
+        void Promise.all(
+          nextBatch
+            .slice(0, NEXT_THUMBNAIL_PREFETCH_COUNT)
+            .map((item) =>
+              item.thumbnail
+                ? Image.prefetch(item.thumbnail).catch(() => false)
+                : Promise.resolve(false),
+            ),
+        );
         dispatch(
           mergeShortsPage({
             videos: nextBatch,
@@ -759,12 +788,13 @@ export default function ShortsScreen() {
         );
       } finally {
         if (requestId === loadRequestRef.current) {
+          inFlightPageRef.current = null;
           setLoading(false);
           setLoadingMore(false);
         }
       }
     },
-    [dispatch, loadingMore, normalizeVideoBatch, selectedVideo, shortsPage],
+    [dispatch, normalizeVideoBatch, selectedVideo],
   );
 
   useEffect(() => {
@@ -782,12 +812,12 @@ export default function ShortsScreen() {
   }, []);
 
   const handleLoadMore = useCallback(async () => {
-    if (loadingMore || !hasMore) {
+    if (inFlightPageRef.current !== null || !hasMoreRef.current) {
       return;
     }
 
     await loadShorts(false);
-  }, [hasMore, loadShorts, loadingMore]);
+  }, [loadShorts]);
 
   useEffect(() => {
     const item = shortsData[currentIndex];
@@ -842,12 +872,31 @@ export default function ShortsScreen() {
       if (visible && visible.index != null) {
         setCurrentIndex(visible.index);
 
-        if (visible.index >= shortsData.length - PREFETCH_SHORTS_COUNT) {
+        if (visible.index === shortsData.length - 1) {
           handleLoadMore();
         }
       }
     },
     [handleLoadMore, shortsData.length],
+  );
+
+  const handleMomentumScrollEnd = useCallback(
+    (event: {
+      nativeEvent: { contentOffset: { y: number } };
+    }) => {
+      const nextIndex = Math.max(
+        0,
+        Math.min(
+          shortsData.length - 1,
+          Math.round(event.nativeEvent.contentOffset.y / pageHeight),
+        ),
+      );
+      setCurrentIndex(nextIndex);
+      if (nextIndex === shortsData.length - 1) {
+        handleLoadMore();
+      }
+    },
+    [handleLoadMore, pageHeight, shortsData.length],
   );
 
   const viewabilityConfig = useMemo(
@@ -1334,6 +1383,8 @@ export default function ShortsScreen() {
   const renderItem: ListRenderItem<ShortItem> = useCallback(
     ({ item, index }) => {
       const isActive = index === currentIndex;
+      const shouldPreload =
+        isFocused && (isActive || index === currentIndex + 1);
 
       const currentLikes = likeCount[item.id] ?? item.likes;
       const channelId = getChannelId(item);
@@ -1344,23 +1395,21 @@ export default function ShortsScreen() {
         String(currentUserId) === String(getChannelOwnerId(item));
 
       return (
-        <View style={styles.videoContainer}>
+        <View style={[styles.videoContainer, { height: pageHeight }]}>
           {/* VIDEO */}
 
-          {isActive && isFocused ? (
+          {shouldPreload ? (
             <ShortVideo
               item={item}
-              isActive
+              isActive={isActive}
               muted={muted}
-              onProgress={(currentTime, duration) => {
-                trackView(item, currentTime, duration);
-              }}
+              onProgress={trackView}
             />
           ) : item.thumbnail ? (
             <Image
               source={{ uri: item.thumbnail }}
               style={styles.video}
-              resizeMode="cover"
+              resizeMode="contain"
             />
           ) : null}
 
@@ -1542,6 +1591,7 @@ export default function ShortsScreen() {
       loadComments,
       muted,
       navigation,
+      pageHeight,
       subscribed,
       subscriberCount,
       toggleLike,
@@ -1586,7 +1636,15 @@ export default function ShortsScreen() {
   ======================================================= */
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      onLayout={(event) => {
+        const nextHeight = Math.round(event.nativeEvent.layout.height);
+        if (nextHeight > 0 && nextHeight !== pageHeight) {
+          setPageHeight(nextHeight);
+        }
+      }}
+    >
       <StatusBar
         barStyle="light-content"
         backgroundColor="#000"
@@ -1600,21 +1658,20 @@ export default function ShortsScreen() {
         renderItem={renderItem}
         pagingEnabled
         showsVerticalScrollIndicator={false}
-        snapToInterval={height}
+        snapToInterval={pageHeight}
         snapToAlignment="start"
         decelerationRate="fast"
         disableIntervalMomentum
+        onMomentumScrollEnd={handleMomentumScrollEnd}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.35}
         removeClippedSubviews
         maxToRenderPerBatch={2}
         windowSize={6}
         initialNumToRender={2}
         getItemLayout={(_, index) => ({
-          length: height,
-          offset: height * index,
+          length: pageHeight,
+          offset: pageHeight * index,
           index,
         })}
       />

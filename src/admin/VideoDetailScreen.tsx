@@ -153,6 +153,8 @@ export default function VideoDetailScreen() {
   const [videoDetails, setVideoDetails] = useState(
     routeVideo || cachedVideoDetails || FALLBACK_VIDEO,
   );
+  const videoDetailsRef = useRef(videoDetails);
+  videoDetailsRef.current = videoDetails;
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [watchedPercent, setWatchedPercent] = useState(
@@ -201,7 +203,9 @@ export default function VideoDetailScreen() {
 
   useEffect(() => {
     const initialDetails = routeVideo || cachedVideoDetails;
-    setVideoDetails(initialDetails || FALLBACK_VIDEO);
+    const nextDetails = initialDetails || FALLBACK_VIDEO;
+    videoDetailsRef.current = nextDetails;
+    setVideoDetails(nextDetails);
     setLoading(!initialDetails);
     setWatchedPercent(
       Math.max(0, Math.min(100, Number(initialDetails?.watchedPercent) || 0)),
@@ -235,23 +239,24 @@ export default function VideoDetailScreen() {
 
   useEffect(() => {
     if (!cachedVideoDetails) return;
-    setVideoDetails((previous) => ({ ...previous, ...cachedVideoDetails }));
+    const nextDetails = { ...videoDetailsRef.current, ...cachedVideoDetails };
+    videoDetailsRef.current = nextDetails;
+    setVideoDetails(nextDetails);
     setLoading(false);
   }, [cachedVideoDetails]);
 
   const updateVideoDetails = useCallback(
     (update) => {
-      setVideoDetails((previous) => {
-        const next =
-          typeof update === "function" ? update(previous) : update;
-        dispatch(
-          setCachedVideoData({
-            key: `video:${routeId}`,
-            data: next,
-          }),
-        );
-        return next;
-      });
+      const next =
+        typeof update === "function" ? update(videoDetailsRef.current) : update;
+      videoDetailsRef.current = next;
+      setVideoDetails(next);
+      dispatch(
+        setCachedVideoData({
+          key: `video:${routeId}`,
+          data: next,
+        }),
+      );
     },
     [dispatch, routeId],
   );

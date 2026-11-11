@@ -67,6 +67,14 @@ if (playIntegrityProjectNumber && !/^\d+$/.test(playIntegrityProjectNumber)) {
 }
 
 const appExpo = app.expo || {};
+const expoPlugins = [
+  "expo-asset",
+  "expo-audio",
+  "expo-font",
+  "expo-status-bar",
+  "expo-video",
+  "expo-web-browser",
+];
 
 module.exports = {
   ...app,
@@ -74,6 +82,7 @@ module.exports = {
     ...appExpo,
     plugins: [
       ...(appExpo.plugins || []),
+      ...expoPlugins,
       ...(googlePlugin ? [googlePlugin] : []),
       [
         "expo-splash-screen",
@@ -92,8 +101,12 @@ module.exports = {
     ],
     extra: {
       ...(appExpo.extra || {}),
-      apiBaseUrl: getEnv("API_BASE_URL") || "https://vidbuxapp.com",
-      apiSocketBaseUrl: getEnv("API_SOCKET_BASE_URL"),
+      apiBaseUrl:
+        getEnv("API_BASE_URL") ||
+        getEnv("EXPO_PUBLIC_API_BASE_URL") ||
+        "https://vidbuxapp.com",
+      apiSocketBaseUrl:
+        getEnv("API_SOCKET_BASE_URL") || getEnv("EXPO_PUBLIC_SOCKET_BASE_URL"),
       playIntegrityCloudProjectNumber: playIntegrityProjectNumber
         ? Number(playIntegrityProjectNumber)
         : undefined,
