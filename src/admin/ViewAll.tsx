@@ -1288,6 +1288,8 @@ import { API_ORIGIN } from "../../config/api";
 import Navbar from "./Navbar";
 import TopicChips from "./TopicChips";
 import AdminBottomTabs from "./AdminBottomTabs";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+import { setCachedVideoData } from "../store/videosSlice";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -1449,12 +1451,15 @@ function ShortCard({ item, onPress }) {
 export default function ViewAll() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
+  const dispatch = useAppDispatch();
   const { type } = route.params || {};
 
   const section = SECTIONS[type];
 
   const [page, setPage] = useState(1);
   const [items, setItems] = useState([]);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -1467,6 +1472,18 @@ export default function ViewAll() {
   const [selectedTopic, setSelectedTopic] = useState("For you");
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const previousTypeRef = useRef(type);
+  const viewAllCacheKey = `view-all:${type}:${selectedCategoryId || "all"}`;
+  const cachedViewAll = useAppSelector(
+    (state) => state.appVideos.cachedVideoData[viewAllCacheKey],
+  );
+
+  useEffect(() => {
+    if (!cachedViewAll) return;
+    setItems(cachedViewAll.items || []);
+    setTotal(cachedViewAll.total || 0);
+    setHasMore(cachedViewAll.hasMore ?? true);
+    setLoading(false);
+  }, [cachedViewAll]);
 
   useEffect(() => {
     if (previousTypeRef.current !== type) {
@@ -1494,7 +1511,7 @@ export default function ViewAll() {
           setLoadingMore(true);
           setLoadMoreError(null);
         } else {
-          setLoading(true);
+          setLoading(!cachedViewAll);
           setError(null);
         }
 
@@ -1554,22 +1571,36 @@ export default function ViewAll() {
           );
           return isShort ? normalizeShort(video) : normalizeVideoListItem(video);
         });
-        setItems((current) => {
-          if (page === 1) return normalized;
-          const existingIds = new Set(current.map((item) => String(item.id)));
-          return [
-            ...current,
-            ...normalized.filter(
-              (item) => !existingIds.has(String(item.id)),
-            ),
-          ];
-        });
-        setTotal(Number(data.total) || list.length);
-        setHasMore(
+        const nextItems =
+          page === 1
+            ? normalized
+            : [
+                ...itemsRef.current,
+                ...normalized.filter(
+                  (item) =>
+                    !itemsRef.current.some(
+                      (existing) => String(existing.id) === String(item.id),
+                    ),
+                ),
+              ];
+        const nextTotal = Number(data.total) || list.length;
+        const nextHasMore =
           typeof data.hasMore === "boolean"
             ? data.hasMore
             : Number(data.total) > page * PAGE_SIZE ||
-                list.length >= PAGE_SIZE,
+                list.length >= PAGE_SIZE;
+        setItems(nextItems);
+        setTotal(nextTotal);
+        setHasMore(nextHasMore);
+        dispatch(
+          setCachedVideoData({
+            key: viewAllCacheKey,
+            data: {
+              items: nextItems,
+              total: nextTotal,
+              hasMore: nextHasMore,
+            },
+          }),
         );
       } catch (err) {
         if (active) {
@@ -1578,7 +1609,7 @@ export default function ViewAll() {
             setLoadMoreError(message);
           } else {
             setError(message);
-            setItems([]);
+            if (!cachedViewAll) setItems([]);
           }
         }
       } finally {
@@ -1595,7 +1626,15 @@ export default function ViewAll() {
     return () => {
       active = false;
     };
-  }, [type, page, pageRequest, section, selectedCategoryId]);
+  }, [
+    type,
+    page,
+    pageRequest,
+    section,
+    selectedCategoryId,
+    dispatch,
+    viewAllCacheKey,
+  ]);
 
   const loadNextPage = () => {
     if (

@@ -11,12 +11,19 @@ import VideoDetailScreen from "../admin/VideoDetailScreen";
 import CopyrightClaimPage from "../admin/CopyrightClaimPage";
 import CopyrightScreen from "../screens/CopyrightClaimScreen";
 import { API_ORIGIN } from "../../config/api";
+import { clearVideoData } from "../store/videosSlice";
+import { useAppDispatch } from "../store/hooks";
 import LegalSidebarScreen from "../admin/LegalSidebarScreen";
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
+  const dispatch = useAppDispatch();
   const [sessionLoading, setSessionLoading] = useState(true);
   const [hasSession, setHasSession] = useState(false);
+
+  useEffect(() => {
+    if (!hasSession) dispatch(clearVideoData());
+  }, [dispatch, hasSession]);
 
   useEffect(() => {
     let active = true;

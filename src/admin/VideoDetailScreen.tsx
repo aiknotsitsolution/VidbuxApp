@@ -36,6 +36,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getViewSocket } from "../utils/viewSocket";
 import { API_ORIGIN } from "../../config/api";
 import { showToast } from "../utils/notifications";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+import { setCachedVideoData } from "../store/videosSlice";
 import Navbar from "./Navbar";
 import AdminBottomTabs from "./AdminBottomTabs";
 
@@ -135,11 +137,21 @@ export default function VideoDetailScreen() {
   const isFocused = useIsFocused();
   const routeId = route?.params?.id ?? route?.params?.videoId ?? 1;
   const routeVideo = route?.params?.item ?? route?.params?.video ?? null;
+  const dispatch = useAppDispatch();
+  const cachedVideoDetails = useAppSelector(
+    (state) => state.appVideos.cachedVideoData[`video:${routeId}`],
+  );
+  const cachedComments = useAppSelector(
+    (state) => state.appVideos.cachedVideoData[`comments:${routeId}`],
+  );
+  const cachedSuggestedVideos = useAppSelector(
+    (state) => state.appVideos.cachedVideoData[`suggested:${routeId}`],
+  );
 
   // ==================== STATE ====================
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedVideoDetails && !routeVideo);
   const [videoDetails, setVideoDetails] = useState(
-    routeVideo || FALLBACK_VIDEO,
+    routeVideo || cachedVideoDetails || FALLBACK_VIDEO,
   );
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -174,17 +186,75 @@ export default function VideoDetailScreen() {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [currentUserLoaded, setCurrentUserLoaded] = useState(false);
 
-  const [comments, setComments] = useState([]);
+  const comments = cachedComments || [];
   const [commentText, setCommentText] = useState("");
   const [commentLoading, setCommentLoading] = useState(false);
-  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsLoading, setCommentsLoading] = useState(!cachedComments);
 
-  const [suggestedVideos, setSuggestedVideos] = useState([]);
-  const [suggestedLoading, setSuggestedLoading] = useState(false);
+  const suggestedVideos = cachedSuggestedVideos || [];
+  const [suggestedLoading, setSuggestedLoading] =
+    useState(!cachedSuggestedVideos);
 
   const [autoplay, setAutoplay] = useState(true);
   const [upNextOverlay, setUpNextOverlay] = useState(null);
   const [countdownLeft, setCountdownLeft] = useState(null);
+
+  useEffect(() => {
+    const initialDetails = routeVideo || cachedVideoDetails;
+    setVideoDetails(initialDetails || FALLBACK_VIDEO);
+    setLoading(!initialDetails);
+    setWatchedPercent(
+      Math.max(0, Math.min(100, Number(initialDetails?.watchedPercent) || 0)),
+    );
+    setLikesCount(
+      Number(initialDetails?.likesCount ?? initialDetails?.likes ?? 0),
+    );
+    setDislikesCount(
+      Number(initialDetails?.dislikesCount ?? initialDetails?.dislikes ?? 0),
+    );
+    setLiked(Boolean(initialDetails?.isLiked));
+    setDisliked(Boolean(initialDetails?.isDisliked));
+    setIsWatchLater(
+      Boolean(
+        initialDetails?.isWatchLater ??
+          initialDetails?.inWatchLater ??
+          initialDetails?.isInWatchLater,
+      ),
+    );
+    setIsSubscribed(Boolean(initialDetails?.isSubscribed));
+    setSubscribersCount(
+      Number(
+        initialDetails?.channel?.subscribersCount ??
+          initialDetails?.subscribersCount ??
+          0,
+      ),
+    );
+    resumeApplied.current = false;
+    lastProgressSent.current = { time: 0, percent: 0, timestamp: 0 };
+  }, [routeId]);
+
+  useEffect(() => {
+    if (!cachedVideoDetails) return;
+    setVideoDetails((previous) => ({ ...previous, ...cachedVideoDetails }));
+    setLoading(false);
+  }, [cachedVideoDetails]);
+
+  const updateVideoDetails = useCallback(
+    (update) => {
+      setVideoDetails((previous) => {
+        const next =
+          typeof update === "function" ? update(previous) : update;
+        dispatch(
+          setCachedVideoData({
+            key: `video:${routeId}`,
+            data: next,
+          }),
+        );
+        return next;
+      });
+    },
+    [dispatch, routeId],
+  );
 
   // ==================== REFS ====================
   const controlsTimer = useRef(null);
@@ -238,7 +308,10 @@ export default function VideoDetailScreen() {
       currentSocket = socket;
       const handleViewCountUpdated = ({ videoId, views }) => {
         if (String(videoId) !== String(routeId)) return;
-        setVideoDetails((previous) => ({ ...previous, views: Number(views) }));
+        updateVideoDetails((previous) => ({
+          ...previous,
+          views: Number(views),
+        }));
       };
       socket.on("view-count-updated", handleViewCountUpdated);
       viewHandler = handleViewCountUpdated;
@@ -250,7 +323,7 @@ export default function VideoDetailScreen() {
         currentSocket.off("view-count-updated", viewHandler);
       }
     };
-  }, [routeId]);
+  }, [routeId, updateVideoDetails]);
 
   const saveWatchProgress = useCallback(
     async (time, videoDuration) => {
@@ -317,7 +390,10 @@ export default function VideoDetailScreen() {
 
         const data = await res.json().catch(() => ({}));
         if (typeof data.views === "number") {
-          setVideoDetails((previous) => ({ ...previous, views: data.views }));
+          updateVideoDetails((previous) => ({
+            ...previous,
+            views: data.views,
+          }));
         }
       } catch (error) {
         console.warn("Watch progress save error:", error);
@@ -325,7 +401,7 @@ export default function VideoDetailScreen() {
         viewRequestInFlight.current = false;
       }
     },
-    [routeId],
+    [routeId, updateVideoDetails],
   );
 
   // ==================== MEDIA URLS ====================
@@ -577,7 +653,7 @@ export default function VideoDetailScreen() {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
       try {
-        setLoading(true);
+        setLoading(!cachedVideoDetails);
         const res = await fetch(`${API_BASE}/${routeId}`, { headers });
         const data = await res.json().catch(() => ({}));
         const payload = data?.video || data;
@@ -589,7 +665,7 @@ export default function VideoDetailScreen() {
             });
             return;
           }
-          setVideoDetails((prev) => ({ ...prev, ...payload }));
+          updateVideoDetails((prev) => ({ ...prev, ...payload }));
           setLikesCount(Number(payload.likesCount ?? payload.likes ?? 0));
           setDislikesCount(
             Number(payload.dislikesCount ?? payload.dislikes ?? 0),
@@ -624,12 +700,17 @@ export default function VideoDetailScreen() {
       }
 
       try {
-        setCommentsLoading(true);
+        setCommentsLoading(!cachedComments);
         const res = await fetch(`${API_BASE}/${routeId}/comments`, {
           headers,
         });
         const data = await res.json().catch(() => ({}));
-        setComments(Array.isArray(data?.comments) ? data.comments : []);
+        dispatch(
+          setCachedVideoData({
+            key: `comments:${routeId}`,
+            data: Array.isArray(data?.comments) ? data.comments : [],
+          }),
+        );
       } catch (e) {
         console.warn("Comments error:", e);
       } finally {
@@ -637,7 +718,7 @@ export default function VideoDetailScreen() {
       }
 
       try {
-        setSuggestedLoading(true);
+        setSuggestedLoading(!cachedSuggestedVideos);
         let res = await fetch(`${API_BASE}/${routeId}/related`, { headers });
         let data = await res.json().catch(() => ({}));
 
@@ -662,7 +743,12 @@ export default function VideoDetailScreen() {
           return vidId !== currentId && !watched.has(vidId) && !isShortVideo(v);
         });
 
-        setSuggestedVideos(list.slice(0, 12));
+        dispatch(
+          setCachedVideoData({
+            key: `suggested:${routeId}`,
+            data: list.slice(0, 12),
+          }),
+        );
       } catch (e) {
         console.warn("Suggested error:", e);
       } finally {
@@ -671,7 +757,7 @@ export default function VideoDetailScreen() {
     };
 
     fetchAll();
-  }, [routeId]);
+  }, [dispatch, routeId, updateVideoDetails]);
 
   // Resume from last saved position
   useEffect(() => {
@@ -1011,14 +1097,19 @@ export default function VideoDetailScreen() {
       });
       const data = await res.json().catch(() => ({}));
       if (data?.success) {
-        setComments((prev) => [
-          {
-            _id: Date.now().toString(),
-            text: commentText.trim(),
-            createdAt: new Date().toISOString(),
-          },
-          ...prev,
-        ]);
+        dispatch(
+          setCachedVideoData({
+            key: `comments:${routeId}`,
+            data: [
+              {
+                _id: Date.now().toString(),
+                text: commentText.trim(),
+                createdAt: new Date().toISOString(),
+              },
+              ...comments,
+            ],
+          }),
+        );
         setCommentText("");
       }
     } catch (e) {

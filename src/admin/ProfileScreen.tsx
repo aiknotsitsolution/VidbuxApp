@@ -28,6 +28,12 @@ import * as Device from "expo-device";
 import { fetch as expoFetch } from "expo/fetch";
 import { File } from "expo-file-system";
 import { API_ORIGIN } from "../../config/api";
+import {
+  clearVideoData,
+  setProfileVideos,
+  setProfileVideosLoading,
+} from "../store/videosSlice";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { showToast } from "../utils/notifications";
 // import LogoutWarningModal from "../components/LogoutWarningModal";
 import LogoutWarningModal from "../components/LogoutWarningModal";
@@ -92,6 +98,11 @@ const getLocalTimezone = () => {
 export function ProfileScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const dispatch = useAppDispatch();
+  const myVideos = useAppSelector((state) => state.appVideos.profileVideos);
+  const videosLoading = useAppSelector(
+    (state) => state.appVideos.profileVideosLoading,
+  );
   const initialTab = (route.params as { tab?: string } | undefined)?.tab;
 
   const [activeTab, setActiveTab] = useState(
@@ -106,12 +117,10 @@ export function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [myVideos, setMyVideos] = useState([]);
   const [historyVideos, setHistoryVideos] = useState([]);
   const [watchLaterVideos, setWatchLaterVideos] = useState([]);
   const [likedVideos, setLikedVideos] = useState([]);
 
-  const [videosLoading, setVideosLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [watchLaterLoading, setWatchLaterLoading] = useState(false);
   const [likedLoading, setLikedLoading] = useState(false);
@@ -581,7 +590,7 @@ export function ProfileScreen() {
 
     const fetchMyVideos = async () => {
       try {
-        setVideosLoading(true);
+        dispatch(setProfileVideosLoading(myVideos.length === 0));
         const token = await AsyncStorage.getItem("token");
         if (!token) return;
 
@@ -590,15 +599,14 @@ export function ProfileScreen() {
         });
 
         if (!chRes.ok) {
-          setMyVideos([]);
-          return;
+          throw new Error(`Failed to load channels (${chRes.status})`);
         }
 
         const chData = await chRes.json();
         const channels = chData.channels || [];
 
         if (channels.length === 0) {
-          setMyVideos([]);
+          dispatch(setProfileVideos([]));
           return;
         }
 
@@ -646,7 +654,7 @@ export function ProfileScreen() {
             new Date(a.uploadDate || 0).getTime(),
         );
 
-        setMyVideos(allVideos);
+        dispatch(setProfileVideos(allVideos));
 
         const totalViews = allVideos.reduce(
           (sum, video) => sum + (Number(video.views) || 0),
@@ -664,12 +672,12 @@ export function ProfileScreen() {
       } catch (e) {
         console.warn("My videos fetch error:", e);
       } finally {
-        setVideosLoading(false);
+        dispatch(setProfileVideosLoading(false));
       }
     };
 
     fetchMyVideos();
-  }, [user?._id]);
+  }, [dispatch, user?._id]);
 
   useEffect(() => {
     if (activeTab === "liked" && likedVideos.length === 0) {
@@ -1226,6 +1234,7 @@ export function ProfileScreen() {
     try {
       await AsyncStorage.multiRemove(["token", "user"]);
     } finally {
+      dispatch(clearVideoData());
       navigation.replace("Login");
     }
   };

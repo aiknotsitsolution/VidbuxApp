@@ -27,6 +27,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { API_ORIGIN } from "../../config/api";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+import { setCachedVideoData } from "../store/videosSlice";
 import { showToast } from "../utils/notifications";
 import Navbar from "./Navbar";
 import { useRoute } from "@react-navigation/native";
@@ -56,12 +58,16 @@ const STATIC_CATEGORIES = [
 
 export default function ChannelScreen({ navigation }) {
   const route = useRoute();
+  const dispatch = useAppDispatch();
+  const cachedChannels = useAppSelector(
+    (state) => state.appVideos.cachedVideoData["creator:channels"],
+  );
   const [channels, setChannels] = useState([]);
   const [selectedChannelId, setSelectedChannelId] = useState(null);
   const [channel, setChannel] = useState(null);
   const [videos, setVideos] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedChannels?.length);
   const [activeTab, setActiveTab] = useState("Videos");
   const [videoType, setVideoType] = useState("short"); // short or long
   // Create Channel Modal
@@ -92,6 +98,10 @@ export default function ChannelScreen({ navigation }) {
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const channelVideosKey = `creator:videos:${selectedChannelId || ""}`;
+  const cachedVideos = useAppSelector(
+    (state) => state.appVideos.cachedVideoData[channelVideosKey],
+  );
 
   const getVideoType = (video) => {
     const rawType = video?.videoType;
@@ -154,6 +164,15 @@ export default function ChannelScreen({ navigation }) {
 
   // ================= FETCH USER CHANNELS =================
   useEffect(() => {
+    if (!cachedChannels?.length) return;
+    setChannels(cachedChannels);
+    if (!selectedChannelId) {
+      setSelectedChannelId(cachedChannels[0]._id);
+      setChannel(cachedChannels[0]);
+    }
+  }, [cachedChannels, selectedChannelId]);
+
+  useEffect(() => {
     const fetchChannels = async () => {
       const token = await getToken();
       if (!token) {
@@ -163,7 +182,7 @@ export default function ChannelScreen({ navigation }) {
       }
 
       try {
-        setLoading(true);
+        setLoading(!cachedChannels?.length);
         const res = await fetch(`${API_BASE}/uservideo/channel`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -177,6 +196,12 @@ export default function ChannelScreen({ navigation }) {
         const data = await res.json();
         const userChannels = data.channels || [];
         setChannels(userChannels);
+        dispatch(
+          setCachedVideoData({
+            key: "creator:channels",
+            data: userChannels,
+          }),
+        );
 
         if (userChannels.length > 0) {
           setSelectedChannelId(userChannels[0]._id);
@@ -186,18 +211,19 @@ export default function ChannelScreen({ navigation }) {
         }
       } catch (err) {
         console.log(err);
-        setShowCreateModal(true);
+        if (!cachedChannels?.length) setShowCreateModal(true);
       } finally {
         setLoading(false);
       }
     };
 
     fetchChannels();
-  }, []);
+  }, [dispatch]);
 
   // ================= FETCH VIDEOS =================
   useEffect(() => {
     if (!selectedChannelId) return;
+    if (cachedVideos) setVideos(cachedVideos);
 
     const fetchVideos = async () => {
       const token = await getToken();
@@ -211,7 +237,14 @@ export default function ChannelScreen({ navigation }) {
 
         if (res.ok) {
           const result = await res.json();
-          setVideos(result.videos || []);
+          const nextVideos = result.videos || [];
+          setVideos(nextVideos);
+          dispatch(
+            setCachedVideoData({
+              key: channelVideosKey,
+              data: nextVideos,
+            }),
+          );
         }
       } catch (err) {
         console.log("Videos fetch error", err);
@@ -219,7 +252,7 @@ export default function ChannelScreen({ navigation }) {
     };
 
     fetchVideos();
-  }, [selectedChannelId]);
+  }, [channelVideosKey, dispatch, selectedChannelId]);
 
   // ================= IMAGE / VIDEO PICKER =================
   // ================= IMAGE / VIDEO PICKER =================
@@ -372,6 +405,7 @@ export default function ChannelScreen({ navigation }) {
         const data = await channelsRes.json();
         const updated = data.channels || [];
         setChannels(updated);
+        dispatch(setCachedVideoData({ key: "creator:channels", data: updated }));
         setSelectedChannelId(result.channel._id);
         setChannel(result.channel);
       }
@@ -510,7 +544,14 @@ export default function ChannelScreen({ navigation }) {
       );
       if (videosRes.ok) {
         const data = await videosRes.json();
-        setVideos(data.videos || []);
+        const updatedVideos = data.videos || [];
+        setVideos(updatedVideos);
+        dispatch(
+          setCachedVideoData({
+            key: `creator:videos:${selectedChannelId}`,
+            data: updatedVideos,
+          }),
+        );
       }
 
       // Reset form

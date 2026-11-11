@@ -38,8 +38,14 @@ import {
   useNavigation,
   useRoute,
 } from "@react-navigation/native";
-
 import { API_ORIGIN, API_USERVIDEO } from "../../config/api";
+import {
+  addSelectedShort,
+  incrementShortComments,
+  mergeShortsPage,
+  updateShortViews,
+} from "../store/videosSlice";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { getViewSocket } from "../utils/viewSocket";
 import { showToast } from "../utils/notifications";
 
@@ -507,16 +513,15 @@ function CommentAvatar({ comment }: { comment: ShortComment }) {
 
 export default function ShortsScreen() {
   const navigation = useNavigation<any>();
+  const dispatch = useAppDispatch();
   const route = useRoute<RouteProp<ShortsRouteParams, "Shorts">>();
   const isFocused = useIsFocused();
 
   const selectedVideo = route?.params?.video;
+  const shortsData = useAppSelector((state) => state.appVideos.shorts);
+  const shortsPage = useAppSelector((state) => state.appVideos.shortsPage);
+  const hasMore = useAppSelector((state) => state.appVideos.shortsHasMore);
 
-  const [shortsData, setShortsData] = useState<ShortItem[]>(() =>
-    selectedVideo
-      ? [normalizeShort({ ...(selectedVideo.raw || {}), ...selectedVideo })]
-      : [],
-  );
   const [detailsItem, setDetailsItem] = useState<ShortItem | null>(null);
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -531,9 +536,10 @@ export default function ShortsScreen() {
 
   const [muted, setMuted] = useState(true);
 
-  const [loading, setLoading] = useState(!selectedVideo);
+  const [loading, setLoading] = useState(
+    !selectedVideo && shortsData.length === 0,
+  );
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
 
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -560,7 +566,7 @@ export default function ShortsScreen() {
 
   const listRef = useRef<FlatList<ShortItem>>(null);
   const loadRequestRef = useRef(0);
-  const nextPageRef = useRef(1);
+  const initialLoadStarted = useRef(false);
 
   useEffect(() => {
     if (!selectedVideo) return;
@@ -568,13 +574,43 @@ export default function ShortsScreen() {
       ...(selectedVideo.raw || {}),
       ...selectedVideo,
     });
-    setShortsData((previous) => [
-      selected,
-      ...previous.filter((item) => item.id !== selected.id),
-    ]);
+    dispatch(addSelectedShort(selected));
     setCurrentIndex(0);
     setLoading(false);
-  }, [selectedVideo]);
+  }, [dispatch, selectedVideo]);
+
+  useEffect(() => {
+    setLiked((previous) => {
+      const next = { ...previous };
+      shortsData.forEach((item: ShortItem) => {
+        if (next[item.id] === undefined) next[item.id] = Boolean(item.isLiked);
+      });
+      return next;
+    });
+    setLikeCount((previous) => {
+      const next = { ...previous };
+      shortsData.forEach((item: ShortItem) => {
+        if (next[item.id] === undefined) next[item.id] = item.likes;
+      });
+      return next;
+    });
+    setSubscribed((previous) => {
+      const next = { ...previous };
+      shortsData.forEach((item: ShortItem) => {
+        if (next[item.id] === undefined)
+          next[item.id] = Boolean(item.isSubscribed);
+      });
+      return next;
+    });
+    setSubscriberCount((previous) => {
+      const next = { ...previous };
+      shortsData.forEach((item: ShortItem) => {
+        if (next[item.id] === undefined)
+          next[item.id] = item.subscribersCount;
+      });
+      return next;
+    });
+  }, [shortsData]);
 
   useEffect(() => {
     let active = true;
@@ -623,13 +659,11 @@ export default function ShortsScreen() {
       }
 
       const requestId = ++loadRequestRef.current;
-      const targetPage = reset ? 1 : nextPageRef.current;
+      const targetPage = reset ? 1 : shortsPage + 1;
 
       try {
         if (reset) {
           setLoading(!selectedVideo);
-          setHasMore(true);
-          nextPageRef.current = 1;
         } else {
           setLoadingMore(true);
         }
@@ -663,27 +697,30 @@ export default function ShortsScreen() {
         const nextBatch = normalizeVideoBatch(videos);
 
         if (!nextBatch.length) {
-          setHasMore(false);
+          dispatch(
+            mergeShortsPage({
+              videos: [],
+              page: targetPage,
+              reset,
+              hasMore: false,
+            }),
+          );
           return;
         }
 
-        setShortsData((previous) => {
-          const unique = new Map<string, ShortItem>();
-
-          if (reset) {
-            nextBatch.forEach((item) => unique.set(item.id, item));
-            return Array.from(unique.values());
-          }
-
-          previous.forEach((item) => unique.set(item.id, item));
-          nextBatch.forEach((item) => {
-            if (!unique.has(item.id)) {
-              unique.set(item.id, item);
-            }
-          });
-
-          return Array.from(unique.values());
-        });
+        const total = Number(data?.total);
+        const hasMoreResults =
+          Number.isFinite(total) && total > 0
+            ? targetPage * INITIAL_SHORTS_BATCH < total
+            : videos.length === INITIAL_SHORTS_BATCH;
+        dispatch(
+          mergeShortsPage({
+            videos: nextBatch,
+            page: targetPage,
+            reset,
+            hasMore: hasMoreResults,
+          }),
+        );
 
         setLiked((previous) => ({
           ...previous,
@@ -708,15 +745,6 @@ export default function ShortsScreen() {
           ),
         }));
 
-        const total = Number(data?.total);
-        const hasMoreResults =
-          Number.isFinite(total) && total > 0
-            ? targetPage * INITIAL_SHORTS_BATCH < total
-            : videos.length === INITIAL_SHORTS_BATCH;
-
-        setHasMore(hasMoreResults);
-        nextPageRef.current = targetPage + 1;
-
         if (reset) {
           setCurrentIndex(0);
           setLoading(false);
@@ -736,15 +764,22 @@ export default function ShortsScreen() {
         }
       }
     },
-    [loadingMore, normalizeVideoBatch, selectedVideo],
+    [dispatch, loadingMore, normalizeVideoBatch, selectedVideo, shortsPage],
   );
 
   useEffect(() => {
-    loadShorts(true);
+    if (
+      !initialLoadStarted.current &&
+      !shortsData.length &&
+      !selectedVideo
+    ) {
+      initialLoadStarted.current = true;
+      loadShorts(true);
+    }
     return () => {
       loadRequestRef.current += 1;
     };
-  }, [loadShorts]);
+  }, []);
 
   const handleLoadMore = useCallback(async () => {
     if (loadingMore || !hasMore) {
@@ -780,11 +815,7 @@ export default function ShortsScreen() {
       if (!active || !socket) return;
       currentSocket = socket;
       const handleViewCountUpdated = ({ videoId, views }) => {
-        setShortsData((items) =>
-          items.map((item) =>
-            String(item.id) === String(videoId) ? { ...item, views } : item,
-          ),
-        );
+        dispatch(updateShortViews({ id: videoId, views }));
       };
       socket.on("view-count-updated", handleViewCountUpdated);
       viewHandler = handleViewCountUpdated;
@@ -796,7 +827,7 @@ export default function ShortsScreen() {
         currentSocket.off("view-count-updated", viewHandler);
       }
     };
-  }, []);
+  }, [dispatch]);
 
   /* =======================================================
      VIEWABILITY
@@ -962,16 +993,7 @@ export default function ShortsScreen() {
         const data = await response.json();
 
         if (data.success && typeof data.views === "number") {
-          setShortsData((prev) =>
-            prev.map((short) =>
-              short.id === item.id
-                ? {
-                    ...short,
-                    views: data.views,
-                  }
-                : short,
-            ),
-          );
+          dispatch(updateShortViews({ id: item.id, views: data.views }));
         } else {
           // allow retry if backend rejected
           viewReportedRef.current[item.id] = previous;
@@ -981,7 +1003,7 @@ export default function ShortsScreen() {
         console.warn("View tracking error:", error);
       }
     },
-    [],
+    [dispatch],
   );
 
   /* =======================================================
@@ -1238,16 +1260,7 @@ export default function ShortsScreen() {
            UPDATE COMMENT COUNT
         --------------------------------------------- */
 
-      setShortsData((previous) =>
-        previous.map((short) =>
-          short.id === item.id
-            ? {
-                ...short,
-                comments: short.comments + 1,
-              }
-            : short,
-        ),
-      );
+      dispatch(incrementShortComments(item.id));
     } catch (error: any) {
       console.warn("Comment submit error:", error);
 

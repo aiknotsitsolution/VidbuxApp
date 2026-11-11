@@ -26,6 +26,8 @@ import Navbar from "./Navbar";
 import TopicChips from "./TopicChips";
 import { getViewSocket } from "../utils/viewSocket";
 import { API_ORIGIN } from "../../config/api";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+import { setCachedVideoData } from "../store/videosSlice";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const SHORT_GAP = 10;
@@ -480,6 +482,7 @@ const ShortCard = React.memo(function ShortCard({
 export default function DashboardScreen() {
   const navigation = useNavigation<any>();
   const isFocused = useIsFocused();
+  const dispatch = useAppDispatch();
 
   const [recommended, setRecommended] = useState<any[]>([]);
   const [trending, setTrending] = useState<any[]>([]);
@@ -499,6 +502,32 @@ export default function DashboardScreen() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
   const loadRequestIdRef = useRef(0);
+  const dashboardCacheKey = `dashboard:${selectedCategoryId || "all"}`;
+  const cachedDashboard = useAppSelector(
+    (state) => state.appVideos.cachedVideoData[dashboardCacheKey],
+  );
+  const cachedDashboardRef = useRef(cachedDashboard);
+  cachedDashboardRef.current = cachedDashboard;
+
+  const applyDashboardData = (data: any) => {
+    setRecommended(data.recommended || []);
+    setTrending(data.trending || []);
+    setLatest(data.latest || []);
+    setTrendingShorts(data.trendingShorts || []);
+    setSubscriptions(data.subscriptions || []);
+    setTopShorts(data.topShorts || []);
+    setMoreRecommended(data.moreRecommended || []);
+    setMoreTrending(data.moreTrending || []);
+    setMoreLatest(data.moreLatest || []);
+    setMoreTrendingShorts(data.moreTrendingShorts || []);
+    setMoreTopShorts(data.moreTopShorts || []);
+  };
+
+  useEffect(() => {
+    if (!cachedDashboard) return;
+    applyDashboardData(cachedDashboard);
+    setLoading(false);
+  }, [cachedDashboard]);
 
   const isShort = (item: any) => {
     const t = item?.videoType ?? item?.raw?.videoType ?? [];
@@ -509,7 +538,7 @@ export default function DashboardScreen() {
   const loadAll = useCallback(async () => {
     const requestId = ++loadRequestIdRef.current;
     try {
-      setLoading(true);
+      setLoading(!cachedDashboardRef.current);
       const token = await AsyncStorage.getItem("token");
       const [
         allRecommended,
@@ -553,17 +582,23 @@ export default function DashboardScreen() {
       const topShortBatches = splitFirstBatch(allTopShorts, normalizeShort);
       const subs = getArray(subData).map(normalizeChannel).slice(0, LIMIT);
 
-      setRecommended(recommendedBatches.firstBatch);
-      setTrending(trendingBatches.firstBatch);
-      setLatest(latestBatches.firstBatch);
-      setTrendingShorts(trendingShortBatches.firstBatch);
-      setSubscriptions(subs);
-      setTopShorts(topShortBatches.firstBatch);
-      setMoreRecommended(recommendedBatches.more);
-      setMoreTrending(trendingBatches.more);
-      setMoreLatest(latestBatches.more);
-      setMoreTrendingShorts(trendingShortBatches.more);
-      setMoreTopShorts(topShortBatches.more);
+      const dashboardData = {
+        recommended: recommendedBatches.firstBatch,
+        trending: trendingBatches.firstBatch,
+        latest: latestBatches.firstBatch,
+        trendingShorts: trendingShortBatches.firstBatch,
+        subscriptions: subs,
+        topShorts: topShortBatches.firstBatch,
+        moreRecommended: recommendedBatches.more,
+        moreTrending: trendingBatches.more,
+        moreLatest: latestBatches.more,
+        moreTrendingShorts: trendingShortBatches.more,
+        moreTopShorts: topShortBatches.more,
+      };
+      applyDashboardData(dashboardData);
+      dispatch(
+        setCachedVideoData({ key: dashboardCacheKey, data: dashboardData }),
+      );
     } catch (e) {
       if (requestId !== loadRequestIdRef.current) return;
       console.warn(e);
@@ -571,7 +606,7 @@ export default function DashboardScreen() {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [selectedCategoryId]);
+  }, [dashboardCacheKey, dispatch, selectedCategoryId]);
 
   useEffect(() => {
     loadAll();
@@ -600,6 +635,28 @@ export default function DashboardScreen() {
         setTopShorts((p) => upd(p));
         setMoreTrendingShorts((p) => upd(p));
         setMoreTopShorts((p) => upd(p));
+
+        const cached = cachedDashboardRef.current;
+        if (cached) {
+          dispatch(
+            setCachedVideoData({
+              key: dashboardCacheKey,
+              data: {
+                ...cached,
+                recommended: upd(cached.recommended || []),
+                trending: upd(cached.trending || []),
+                latest: upd(cached.latest || []),
+                trendingShorts: upd(cached.trendingShorts || []),
+                topShorts: upd(cached.topShorts || []),
+                moreRecommended: upd(cached.moreRecommended || []),
+                moreTrending: upd(cached.moreTrending || []),
+                moreLatest: upd(cached.moreLatest || []),
+                moreTrendingShorts: upd(cached.moreTrendingShorts || []),
+                moreTopShorts: upd(cached.moreTopShorts || []),
+              },
+            }),
+          );
+        }
       };
       socket.on("view-count-updated", handler);
     });
@@ -608,7 +665,7 @@ export default function DashboardScreen() {
       active = false;
       if (socket && handler) socket.off("view-count-updated", handler);
     };
-  }, []);
+  }, [dashboardCacheKey, dispatch]);
 
   const onRefresh = async () => {
     setRefreshing(true);

@@ -21,6 +21,8 @@ import {
 import Toast from "react-native-toast-message";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_ORIGIN } from "../../config/api";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+import { setCachedVideoData } from "../store/videosSlice";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -159,6 +161,7 @@ function ShortCard({ item, onPress }) {
 export default function SearchPage() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
+  const dispatch = useAppDispatch();
 
   // query aata hai route params se
   const initialQuery = route.params?.q || route.params?.query || "";
@@ -166,15 +169,28 @@ export default function SearchPage() {
   const [query, setQuery] = useState(initialQuery);
   const [searchText, setSearchText] = useState(initialQuery);
   const [page, setPage] = useState(1);
+  const searchCacheKey = `search:${query.trim().toLowerCase()}:${page}`;
+  const cachedSearch = useAppSelector(
+    (state) => state.appVideos.cachedVideoData[searchCacheKey],
+  );
 
   const [videoResults, setVideoResults] = useState([]);
   const [shortResults, setShortResults] = useState([]);
   const [channelResults, setChannelResults] = useState([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(query.trim() && !cachedSearch));
   const [error, setError] = useState(null);
 
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
+
+  useEffect(() => {
+    if (!cachedSearch) return;
+    setVideoResults(cachedSearch.videoResults);
+    setShortResults(cachedSearch.shortResults);
+    setChannelResults(cachedSearch.channelResults);
+    setTotal(cachedSearch.total);
+    setLoading(false);
+  }, [cachedSearch]);
 
   // Search API call
   useEffect(() => {
@@ -188,10 +204,9 @@ export default function SearchPage() {
     }
 
     let active = true;
-
     const doSearch = async () => {
       try {
-        setLoading(true);
+        setLoading(!cachedSearch);
         setError(null);
 
         const token = await AsyncStorage.getItem("token");
@@ -234,18 +249,29 @@ export default function SearchPage() {
             ? data.data.channels
             : [];
 
-        setVideoResults(videos.map(normalizeVideo));
-        setShortResults(shorts.map(normalizeShort));
-        setChannelResults(channels.map(normalizeChannel));
-        setTotal(
-          Number(data.total) || videos.length + shorts.length + channels.length,
+        const searchResults = {
+          videoResults: videos.map(normalizeVideo),
+          shortResults: shorts.map(normalizeShort),
+          channelResults: channels.map(normalizeChannel),
+          total:
+            Number(data.total) ||
+            videos.length + shorts.length + channels.length,
+        };
+        setVideoResults(searchResults.videoResults);
+        setShortResults(searchResults.shortResults);
+        setChannelResults(searchResults.channelResults);
+        setTotal(searchResults.total);
+        dispatch(
+          setCachedVideoData({ key: searchCacheKey, data: searchResults }),
         );
       } catch (err) {
         if (active) {
           setError(err.message || "Search failed");
-          setVideoResults([]);
-          setShortResults([]);
-          setChannelResults([]);
+          if (!cachedSearch) {
+            setVideoResults([]);
+            setShortResults([]);
+            setChannelResults([]);
+          }
         }
       } finally {
         if (active) setLoading(false);
@@ -257,7 +283,7 @@ export default function SearchPage() {
     return () => {
       active = false;
     };
-  }, [query, page]);
+  }, [dispatch, page, query, searchCacheKey]);
 
   const handleSearch = () => {
     const q = searchText.trim();

@@ -24,6 +24,8 @@ import {
 } from "lucide-react-native";
 import { API_ORIGIN } from "../../config/api";
 import { showToast } from "../utils/notifications";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+import { setCachedVideoData } from "../store/videosSlice";
 import Navbar from "./Navbar";
 import TopicChips from "./TopicChips";
 
@@ -35,11 +37,20 @@ const API_BASE = `${BACKEND_URL}/api/uservideo`;
 export default function SubscribedChannels() {
   const route = useRoute();
   const navigation = useNavigation<any>();
+  const dispatch = useAppDispatch();
   const { id } = (route.params || {}) as { id?: string | number };
+  const listCacheKey = "subscribed:channels";
+  const detailCacheKey = `subscribed:channel:${id || ""}`;
+  const cachedList = useAppSelector(
+    (state) => state.appVideos.cachedVideoData[listCacheKey],
+  );
+  const cachedDetail = useAppSelector(
+    (state) => state.appVideos.cachedVideoData[detailCacheKey],
+  );
 
   // List mode (no id)
   const [subscribedList, setSubscribedList] = useState([]);
-  const [listLoading, setListLoading] = useState(!id);
+  const [listLoading, setListLoading] = useState(!id && !cachedList);
 
   // Detail mode (with id)
   const [channel, setChannel] = useState(null);
@@ -48,7 +59,7 @@ export default function SubscribedChannels() {
   const [subscribersCount, setSubscribersCount] = useState(0);
   const [subscribeLoading, setSubscribeLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("All");
-  const [loading, setLoading] = useState(!!id);
+  const [loading, setLoading] = useState(!!id && !cachedDetail);
 
   // TopicChips state
   const [selectedTopic, setSelectedTopic] = useState("For you");
@@ -88,11 +99,17 @@ export default function SubscribedChannels() {
 
   // ─── LIST: subscribed channels ───
   useEffect(() => {
+    if (id || !cachedList) return;
+    setSubscribedList(cachedList);
+    setListLoading(false);
+  }, [cachedList, id]);
+
+  useEffect(() => {
     if (id) return;
 
     const fetchSubscribed = async () => {
       try {
-        setListLoading(true);
+        setListLoading(!cachedList);
         const token = await AsyncStorage.getItem("token");
         if (!token) {
           setSubscribedList([]);
@@ -112,24 +129,39 @@ export default function SubscribedChannels() {
           (Array.isArray(data) ? data : []);
 
         setSubscribedList(Array.isArray(list) ? list : []);
+        dispatch(
+          setCachedVideoData({
+            key: listCacheKey,
+            data: Array.isArray(list) ? list : [],
+          }),
+        );
       } catch (err) {
         console.error("Subscribed list error:", err);
-        setSubscribedList([]);
+        if (!cachedList) setSubscribedList([]);
       } finally {
         setListLoading(false);
       }
     };
 
     fetchSubscribed();
-  }, [id]);
+  }, [dispatch, id]);
 
   // ─── DETAIL: single channel ───
+  useEffect(() => {
+    if (!id || !cachedDetail) return;
+    setChannel(cachedDetail.channel);
+    setVideos(cachedDetail.videos || []);
+    setSubscribersCount(cachedDetail.subscribersCount || 0);
+    setIsSubscribed(Boolean(cachedDetail.isSubscribed));
+    setLoading(false);
+  }, [cachedDetail, id]);
+
   useEffect(() => {
     if (!id) return;
 
     const fetchChannel = async () => {
       try {
-        setLoading(true);
+        setLoading(!cachedDetail);
         const token = await AsyncStorage.getItem("token");
 
         const res = await fetch(`${API_BASE}/channel/${id}`, {
@@ -137,43 +169,59 @@ export default function SubscribedChannels() {
         });
 
         const data = await res.json();
+        let channelVideos = Array.isArray(data.videos) ? data.videos : [];
 
         if (data.success && data.channel) {
           setChannel(data.channel);
           setSubscribersCount(getSubscribersCount(data.channel));
           setIsSubscribed(Boolean(data.channel.isSubscribed ?? false));
-          setVideos(data.videos || []);
+          setVideos(channelVideos);
         } else {
           setChannel(data.channel || { _id: id, name: "Channel" });
           setSubscribersCount(getSubscribersCount(data.channel || {}));
           setIsSubscribed(
             Boolean((data.channel && data.channel.isSubscribed) ?? false),
           );
-          setVideos(data.videos || []);
+          setVideos(channelVideos);
         }
 
-        if ((!data.videos || data.videos.length === 0) && token) {
+        if (channelVideos.length === 0 && token) {
           try {
             const vRes = await fetch(`${API_BASE}/channel/${id}/videos`, {
               headers: { Authorization: `Bearer ${token}` },
             });
             if (vRes.ok) {
               const vData = await vRes.json();
-              setVideos(vData.videos || []);
+              channelVideos = Array.isArray(vData.videos) ? vData.videos : [];
+              setVideos(channelVideos);
             }
           } catch (_) {}
         }
+
+        dispatch(
+          setCachedVideoData({
+            key: detailCacheKey,
+            data: {
+              channel: data.channel || { _id: id, name: "Channel" },
+              videos: channelVideos,
+              subscribersCount: getSubscribersCount(data.channel || {}),
+              isSubscribed: Boolean(data.channel?.isSubscribed ?? false),
+            },
+          }),
+        );
       } catch (err) {
         console.error("Fetch channel error:", err);
-        setChannel(null);
-        setVideos([]);
+        if (!cachedDetail) {
+          setChannel(null);
+          setVideos([]);
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchChannel();
-  }, [id]);
+  }, [detailCacheKey, dispatch, id]);
 
   // ─── Subscribe toggle ───
   const handleSubscribe = async () => {
@@ -198,14 +246,26 @@ export default function SubscribedChannels() {
       const data = await res.json();
 
       if (data.success) {
-        setIsSubscribed(Boolean(data.subscribed));
-        setSubscribersCount(
+        const nextIsSubscribed = Boolean(data.subscribed);
+        const nextSubscribersCount =
           typeof data.subscribersCount === "number"
             ? data.subscribersCount
             : getSubscribersCount({
                 subscribersCount: data.subscribersCount,
                 subscribedBy: data.subscribedBy,
-              }),
+              });
+        setIsSubscribed(nextIsSubscribed);
+        setSubscribersCount(nextSubscribersCount);
+        dispatch(
+          setCachedVideoData({
+            key: detailCacheKey,
+            data: {
+              channel,
+              videos,
+              isSubscribed: nextIsSubscribed,
+              subscribersCount: nextSubscribersCount,
+            },
+          }),
         );
       }
     } catch (err) {
