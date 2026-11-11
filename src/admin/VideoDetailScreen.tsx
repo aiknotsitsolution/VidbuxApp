@@ -96,6 +96,29 @@ const isShortVideo = (video) => {
   return types.some((type) => String(type).toLowerCase() === "short");
 };
 
+const getEntityId = (value) => {
+  if (!value) return null;
+  if (typeof value === "object") {
+    return value._id || value.id || value.userId || value.ownerId || null;
+  }
+  return value;
+};
+
+const getChannelOwnerId = (video) => {
+  const channel = video?.channel;
+  return getEntityId(
+    channel?.ownerId ||
+      channel?.userId ||
+      channel?.user ||
+      channel?.owner ||
+      video?.channelOwnerId ||
+      video?.ownerId ||
+      video?.userId ||
+      video?.creatorId ||
+      video?.uploadedBy,
+  );
+};
+
 const getGuestId = async () => {
   const storageKey = "video_guest_id";
   const existing = await AsyncStorage.getItem(storageKey);
@@ -148,6 +171,8 @@ export default function VideoDetailScreen() {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subscribersCount, setSubscribersCount] = useState(0);
   const [subscribeLoading, setSubscribeLoading] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [currentUserLoaded, setCurrentUserLoaded] = useState(false);
 
   const [comments, setComments] = useState([]);
   const [commentText, setCommentText] = useState("");
@@ -174,6 +199,26 @@ export default function VideoDetailScreen() {
   const latestTimeRef = useRef(0);
   const latestDurationRef = useRef(0);
   const isScreenFocusedRef = useRef(isFocused);
+
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem("user")
+      .then((storedUser) => {
+        if (!active || !storedUser) return;
+        const user = JSON.parse(storedUser);
+        setCurrentUserId(getEntityId(user));
+      })
+      .catch((error) => {
+        console.warn("Current user lookup error:", error);
+      })
+      .finally(() => {
+        if (active) setCurrentUserLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isShortVideo(routeVideo)) return;
@@ -865,6 +910,13 @@ export default function VideoDetailScreen() {
   };
 
   const handleSubscribe = async () => {
+    if (
+      currentUserId &&
+      String(currentUserId) === String(getChannelOwnerId(videoDetails))
+    ) {
+      return;
+    }
+
     const channelId = videoDetails?.channel?._id || videoDetails?.channel?.id;
     if (!channelId) return;
 
@@ -917,6 +969,10 @@ export default function VideoDetailScreen() {
       });
     }
   };
+
+  const isOwnChannel =
+    currentUserId != null &&
+    String(currentUserId) === String(getChannelOwnerId(videoDetails));
 
   const handleCopyrightReport = () => {
     Alert.alert(
@@ -1312,30 +1368,32 @@ export default function VideoDetailScreen() {
                   </View>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[
-                    styles.subscribeBtn,
-                    isSubscribed && styles.subscribedBtn,
-                  ]}
-                  onPress={handleSubscribe}
-                  disabled={subscribeLoading}
-                >
-                  {subscribeLoading ? (
-                    <ActivityIndicator
-                      size="small"
-                      color={isSubscribed ? "#fff" : "#0f0f0f"}
-                    />
-                  ) : (
-                    <Text
-                      style={[
-                        styles.subscribeText,
-                        isSubscribed && styles.subscribedText,
-                      ]}
-                    >
-                      {isSubscribed ? "Subscribed" : "Subscribe"}
-                    </Text>
-                  )}
-                </TouchableOpacity>
+                {currentUserLoaded && !isOwnChannel ? (
+                  <TouchableOpacity
+                    style={[
+                      styles.subscribeBtn,
+                      isSubscribed && styles.subscribedBtn,
+                    ]}
+                    onPress={handleSubscribe}
+                    disabled={subscribeLoading}
+                  >
+                    {subscribeLoading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={isSubscribed ? "#fff" : "#0f0f0f"}
+                      />
+                    ) : (
+                      <Text
+                        style={[
+                          styles.subscribeText,
+                          isSubscribed && styles.subscribedText,
+                        ]}
+                      >
+                        {isSubscribed ? "Subscribed" : "Subscribe"}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
               <ScrollView

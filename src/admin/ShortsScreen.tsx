@@ -62,6 +62,7 @@ type ShortItem = {
   isSubscribed?: boolean;
   subscribersCount: number;
   channel?: any;
+  channelOwnerId?: string;
   raw?: any;
 };
 
@@ -135,6 +136,30 @@ const toVideoUrl = (value: unknown) => {
   return `${API_ORIGIN}/${normalized.replace(/^\/+/, "")}`;
 };
 
+const getEntityId = (value: any) => {
+  if (!value) return null;
+  if (typeof value === "object") {
+    return value._id || value.id || value.userId || value.ownerId || null;
+  }
+  return value;
+};
+
+const getChannelOwnerId = (item: ShortItem) => {
+  const channel = item.channel || item.raw?.channel;
+  return getEntityId(
+    channel?.ownerId ||
+      channel?.userId ||
+      channel?.user ||
+      channel?.owner ||
+      item.channelOwnerId ||
+      item.raw?.channelOwnerId ||
+      item.raw?.ownerId ||
+      item.raw?.userId ||
+      item.raw?.creatorId ||
+      item.raw?.uploadedBy,
+  );
+};
+
 /* =========================================================
    NORMALIZE SHORT
 ========================================================= */
@@ -171,6 +196,17 @@ const normalizeShort = (video: Record<string, any> = {}): ShortItem => {
     ),
 
     channel: video.channel,
+    channelOwnerId:
+      video.channelOwnerId ||
+      video.channel?.ownerId ||
+      video.channel?.userId ||
+      video.channel?.user?._id ||
+      video.channel?.user?.id ||
+      video.ownerId ||
+      video.userId ||
+      video.creatorId ||
+      video.uploadedBy ||
+      undefined,
 
     raw: video,
   };
@@ -296,14 +332,19 @@ function ShortVideo({
 }) {
   const navigation = useNavigation<any>();
   const [paused, setPaused] = useState(false);
-  const sourceRef = useRef(item.videoUrl);
+  const [hasRenderedFirstFrame, setHasRenderedFirstFrame] = useState(false);
 
   const player = useVideoPlayer(item.videoUrl, (videoPlayer) => {
     videoPlayer.loop = true;
     videoPlayer.muted = muted;
+    videoPlayer.bufferOptions = { minBufferForPlayback: 0.5 };
     // Critical: without this, timeUpdate never fires
     videoPlayer.timeUpdateEventInterval = 0.5;
   });
+
+  useEffect(() => {
+    setHasRenderedFirstFrame(false);
+  }, [item.videoUrl]);
 
   useEffect(() => {
     const pauseIfActive = () => {
@@ -328,21 +369,6 @@ function ShortVideo({
       removeBeforeRemoveListener();
     };
   }, [isActive, navigation, player]);
-
-  useEffect(() => {
-    if (!item.videoUrl || sourceRef.current === item.videoUrl) return;
-    sourceRef.current = item.videoUrl;
-    let isCurrentSource = true;
-    player.replaceAsync(item.videoUrl).catch((error) => {
-      if (isCurrentSource) {
-        console.warn("Short video source error:", error);
-      }
-    });
-
-    return () => {
-      isCurrentSource = false;
-    };
-  }, [item.videoUrl, player]);
 
   /* -------------------------------------------------------
      PLAY / PAUSE
@@ -409,8 +435,23 @@ function ShortVideo({
         player={player}
         style={styles.video}
         contentFit="cover"
+        surfaceType="textureView"
         nativeControls={false}
+        onFirstFrameRender={() => setHasRenderedFirstFrame(true)}
       />
+      {!hasRenderedFirstFrame && item.thumbnail ? (
+        <Image
+          source={{ uri: item.thumbnail }}
+          style={styles.video}
+          resizeMode="cover"
+          pointerEvents="none"
+        />
+      ) : null}
+      {!hasRenderedFirstFrame ? (
+        <View style={styles.videoLoading} pointerEvents="none">
+          <ActivityIndicator size="large" color="#fff" />
+        </View>
+      ) : null}
       {isActive && paused && (
         <TouchableOpacity
           activeOpacity={0.85}
@@ -471,7 +512,11 @@ export default function ShortsScreen() {
 
   const selectedVideo = route?.params?.video;
 
-  const [shortsData, setShortsData] = useState<ShortItem[]>([]);
+  const [shortsData, setShortsData] = useState<ShortItem[]>(() =>
+    selectedVideo
+      ? [normalizeShort({ ...(selectedVideo.raw || {}), ...selectedVideo })]
+      : [],
+  );
   const [detailsItem, setDetailsItem] = useState<ShortItem | null>(null);
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -486,11 +531,13 @@ export default function ShortsScreen() {
 
   const [muted, setMuted] = useState(true);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!selectedVideo);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserLoaded, setCurrentUserLoaded] = useState(false);
 
   /* COMMENTS */
 
@@ -515,12 +562,49 @@ export default function ShortsScreen() {
   const loadRequestRef = useRef(0);
   const nextPageRef = useRef(1);
 
+  useEffect(() => {
+    if (!selectedVideo) return;
+    const selected = normalizeShort({
+      ...(selectedVideo.raw || {}),
+      ...selectedVideo,
+    });
+    setShortsData((previous) => [
+      selected,
+      ...previous.filter((item) => item.id !== selected.id),
+    ]);
+    setCurrentIndex(0);
+    setLoading(false);
+  }, [selectedVideo]);
+
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem("user")
+      .then((storedUser) => {
+        if (!active || !storedUser) return;
+        const user = JSON.parse(storedUser);
+        setCurrentUserId(getEntityId(user));
+      })
+      .catch((error) => {
+        console.warn("Current user lookup error:", error);
+      })
+      .finally(() => {
+        if (active) setCurrentUserLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const normalizeVideoBatch = useCallback(
     (videos: Record<string, any>[]) => {
       let normalized = videos.map(normalizeShort);
 
       if (selectedVideo) {
-        const selected = normalizeShort(selectedVideo.raw || selectedVideo);
+        const selected = normalizeShort({
+          ...(selectedVideo.raw || {}),
+          ...selectedVideo,
+        });
         normalized = [
           selected,
           ...normalized.filter((item) => item.id !== selected.id),
@@ -543,7 +627,7 @@ export default function ShortsScreen() {
 
       try {
         if (reset) {
-          setLoading(true);
+          setLoading(!selectedVideo);
           setHasMore(true);
           nextPageRef.current = 1;
         } else {
@@ -652,7 +736,7 @@ export default function ShortsScreen() {
         }
       }
     },
-    [loadingMore, normalizeVideoBatch],
+    [loadingMore, normalizeVideoBatch, selectedVideo],
   );
 
   useEffect(() => {
@@ -959,6 +1043,13 @@ export default function ShortsScreen() {
   ======================================================= */
 
   const handleSubscribe = async (item: ShortItem) => {
+    if (
+      currentUserId &&
+      String(currentUserId) === String(getChannelOwnerId(item))
+    ) {
+      return;
+    }
+
     const token = await AsyncStorage.getItem("token");
 
     if (!token) {
@@ -1235,21 +1326,30 @@ export default function ShortsScreen() {
       const channelId = getChannelId(item);
       const channelName =
         item.channel?.name || item.raw?.channel?.name || "VidBuxApp";
+      const isOwnChannel =
+        currentUserId != null &&
+        String(currentUserId) === String(getChannelOwnerId(item));
 
       return (
         <View style={styles.videoContainer}>
           {/* VIDEO */}
 
-          <ShortVideo
-            item={item}
-            isActive={isFocused && isActive}
-            muted={muted}
-            onProgress={(currentTime, duration) => {
-              if (isFocused && isActive) {
+          {isActive && isFocused ? (
+            <ShortVideo
+              item={item}
+              isActive
+              muted={muted}
+              onProgress={(currentTime, duration) => {
                 trackView(item, currentTime, duration);
-              }
-            }}
-          />
+              }}
+            />
+          ) : item.thumbnail ? (
+            <Image
+              source={{ uri: item.thumbnail }}
+              style={styles.video}
+              resizeMode="cover"
+            />
+          ) : null}
 
           {/* DARK OVERLAY */}
 
@@ -1295,7 +1395,7 @@ export default function ShortsScreen() {
                 </Text>
               </TouchableOpacity>
 
-              {channelId && (
+              {channelId && currentUserLoaded && !isOwnChannel && (
                 <TouchableOpacity
                   style={styles.subscribeBtn}
                   onPress={() => handleSubscribe(item)}
@@ -1417,11 +1517,21 @@ export default function ShortsScreen() {
     },
     [
       currentIndex,
+      currentUserId,
+      currentUserLoaded,
+      handleCopyright,
+      handleShare,
+      handleSubscribe,
+      isFocused,
       liked,
+      loadingAction,
       likeCount,
+      loadComments,
       muted,
+      navigation,
       subscribed,
       subscriberCount,
+      toggleLike,
       trackView,
     ],
   );
@@ -1767,6 +1877,12 @@ const styles = StyleSheet.create({
 
   video: {
     ...StyleSheet.absoluteFill,
+  },
+
+  videoLoading: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   videoTapArea: {

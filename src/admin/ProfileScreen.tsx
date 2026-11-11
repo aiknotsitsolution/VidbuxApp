@@ -98,6 +98,7 @@ export function ProfileScreen() {
     initialTab === "history" ? "history" : "my-videos",
   );
   const [sortBy, setSortBy] = useState("latest");
+  const [myVideoType, setMyVideoType] = useState("long");
   const [selectedVideo, setSelectedVideo] = useState(null);
 
   
@@ -213,15 +214,51 @@ export function ProfileScreen() {
           ? (source.channel || v.channel)?.name
           : source.channel || v.channel) ||
         "Unknown",
+      channelId:
+        (typeof source.channel === "object"
+          ? source.channel?._id || source.channel?.id || source.channel?.channelId
+          : null) ||
+        (typeof v.channel === "object"
+          ? v.channel?._id || v.channel?.id || v.channel?.channelId
+          : null) ||
+        source.channelId ||
+        v.channelId,
+      channelOwnerId:
+        source.channel?.ownerId ||
+        source.channel?.userId ||
+        source.channel?.user?._id ||
+        source.channel?.user?.id ||
+        source.ownerId ||
+        source.userId ||
+        v.channel?.ownerId ||
+        v.channel?.userId ||
+        v.ownerId ||
+        v.userId ||
+        null,
       duration: formatDuration(source.duration || v.duration),
       views,
       likes:
         source.likesCount || source.likes || v.likesCount || v.likes || null,
       videoUrl: source.videoUrl || v.videoUrl,
+      raw: v,
+      videoType:
+        source.videoType || source.type || v.videoType || v.type || null,
+      isShort: source.isShort ?? v.isShort ?? false,
       watchedAt: v.watchedAt || v.watchedDate || null,
       uploadDate: source.createdAt || v.createdAt,
       description: source.description || v.description || "",
     };
+  };
+
+  const isShortVideo = (video) => {
+    if (video?.isShort === true) return true;
+    const rawType = video?.videoType ?? video?.type;
+    const types = Array.isArray(rawType) ? rawType : [rawType];
+    return types.some((type) =>
+      ["short", "shorts", "short_video", "shortvideo"].includes(
+        String(type).toLowerCase(),
+      ),
+    );
   };
 
   const getHistoryItems = (data) => {
@@ -582,6 +619,14 @@ export function ProfileScreen() {
                 allVideos.push({
                   ...mapped,
                   channel: v.channel?.name || ch.name,
+                  channelId: v.channel?._id || v.channel?.id || ch._id,
+                  channelOwnerId:
+                    mapped.channelOwnerId ||
+                    ch.ownerId ||
+                    ch.userId ||
+                    ch.user?._id ||
+                    ch.user?.id ||
+                    user._id,
                   earnings: v.earnings || 0,
                   dislikes: v.dislikesCount ?? v.dislikes ?? 0,
                   commentsCount: Array.isArray(v.comments)
@@ -1211,6 +1256,14 @@ export function ProfileScreen() {
   }
 
   const openVideo = (video) => {
+    if (isShortVideo(video)) {
+      navigation.navigate("MainTabs", {
+        screen: "Shorts",
+        params: { video: { ...video, raw: video.raw || video } },
+      });
+      return;
+    }
+
     navigation.navigate("VideoDetail", {
       id: video.id || video._id,
       item: video,
@@ -1271,7 +1324,11 @@ export function ProfileScreen() {
     ));
   };
 
-  const sortedMyVideos = [...myVideos].sort((a, b) => {
+  const shortMyVideos = myVideos.filter(isShortVideo);
+  const longMyVideos = myVideos.filter((video) => !isShortVideo(video));
+  const selectedMyVideos =
+    myVideoType === "short" ? shortMyVideos : longMyVideos;
+  const sortedMyVideos = [...selectedMyVideos].sort((a, b) => {
     if (sortBy === "latest")
       return (
         new Date(b.uploadDate || 0).getTime() -
@@ -1647,9 +1704,7 @@ export function ProfileScreen() {
         {activeTab === "my-videos" && (
           <View style={styles.section}>
             <View style={styles.videosHeader}>
-              <Text style={styles.sectionTitle}>
-                Your videos ({myVideos.length})
-              </Text>
+              <Text style={styles.sectionTitle}>Your videos</Text>
               <TouchableOpacity
                 onPress={() =>
                   setSortBy((s) =>
@@ -1671,10 +1726,51 @@ export function ProfileScreen() {
               </TouchableOpacity>
             </View>
 
+            <View style={styles.videoTypeTabs}>
+              <TouchableOpacity
+                style={[
+                  styles.videoTypeTab,
+                  myVideoType === "long" && styles.videoTypeTabActive,
+                ]}
+                onPress={() => setMyVideoType("long")}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: myVideoType === "long" }}
+              >
+                <Text
+                  style={[
+                    styles.videoTypeTabText,
+                    myVideoType === "long" && styles.videoTypeTabTextActive,
+                  ]}
+                >
+                  Videos ({longMyVideos.length})
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.videoTypeTab,
+                  myVideoType === "short" && styles.videoTypeTabActive,
+                ]}
+                onPress={() => setMyVideoType("short")}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: myVideoType === "short" }}
+              >
+                <Text
+                  style={[
+                    styles.videoTypeTabText,
+                    myVideoType === "short" && styles.videoTypeTabTextActive,
+                  ]}
+                >
+                  Shorts ({shortMyVideos.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             {renderVideoList(
               sortedMyVideos,
               videosLoading,
-              "No videos yet. Upload your first video!",
+              myVideoType === "short"
+                ? "No Shorts uploaded yet."
+                : "No long videos uploaded yet.",
               null,
             )}
           </View>
@@ -2515,6 +2611,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 12,
   },
+  videoTypeTabs: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#272727",
+  },
+  videoTypeTab: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  videoTypeTabActive: { borderBottomColor: "#ff0000" },
+  videoTypeTabText: { color: "#aaa", fontSize: 14, fontWeight: "600" },
+  videoTypeTabTextActive: { color: "#fff" },
   sortText: { color: "#aaa", fontSize: 13 },
   videoRow: {
     flexDirection: "row",
