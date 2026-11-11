@@ -1235,7 +1235,12 @@ export function ProfileScreen() {
       await AsyncStorage.multiRemove(["token", "user"]);
     } finally {
       dispatch(clearVideoData());
-      navigation.replace("Login");
+      const rootNavigation = navigation.getParent();
+      if (rootNavigation?.replace) {
+        rootNavigation.replace("AdminPanel");
+      } else {
+        navigation.replace("MainTabs", { screen: "Home" });
+      }
     }
   };
 

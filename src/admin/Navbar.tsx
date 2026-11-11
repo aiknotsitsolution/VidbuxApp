@@ -64,6 +64,15 @@ export default function Navbar({ onMenuPress, points = 0 }) {
     }
   };
 
+  const redirectToHome = () => {
+    const rootNavigation = navigation.getParent()?.getParent();
+    if (rootNavigation?.replace) {
+      rootNavigation.replace("AdminPanel");
+    } else {
+      navigation.navigate("Home");
+    }
+  };
+
   // ===== Trust Score (same logic as web) =====
   const parsedTrustScore = Number(user?.trustScore);
   const trustScore = Number.isFinite(parsedTrustScore)
@@ -195,7 +204,7 @@ export default function Navbar({ onMenuPress, points = 0 }) {
       setUser(null);
       setIsLoggedIn(false);
       setIsDropdownOpen(false);
-      redirectToLogin();
+      redirectToHome();
     }
   };
 

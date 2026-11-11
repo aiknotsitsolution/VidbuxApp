@@ -485,6 +485,7 @@ export default function DashboardScreen() {
   const dispatch = useAppDispatch();
 
   const [recommended, setRecommended] = useState<any[]>([]);
+  const [recommendedFallback, setRecommendedFallback] = useState(false);
   const [trending, setTrending] = useState<any[]>([]);
   const [latest, setLatest] = useState<any[]>([]);
   const [trendingShorts, setTrendingShorts] = useState<any[]>([]);
@@ -511,6 +512,7 @@ export default function DashboardScreen() {
 
   const applyDashboardData = (data: any) => {
     setRecommended(data.recommended || []);
+    setRecommendedFallback(Boolean(data.recommendedFallback));
     setTrending(data.trending || []);
     setLatest(data.latest || []);
     setTrendingShorts(data.trendingShorts || []);
@@ -548,7 +550,15 @@ export default function DashboardScreen() {
         allTopShorts,
         subData,
       ] = await Promise.all([
-        fetchAllCategoryPages("recommended", selectedCategoryId),
+        fetchAllCategoryPages("recommended", selectedCategoryId).catch(
+          (error) => {
+            console.info(
+              "Recommended videos are unavailable; using popular videos instead:",
+              error,
+            );
+            return null;
+          },
+        ),
         fetchAllCategoryPages("trending", selectedCategoryId),
         fetchAllCategoryPages("latest", selectedCategoryId),
         fetchAllCategoryPages("trending-shorts", selectedCategoryId),
@@ -572,8 +582,24 @@ export default function DashboardScreen() {
         return { firstBatch, more };
       };
 
-      const recommendedBatches = splitFirstBatch(allRecommended, normalizeVideo);
-      const trendingBatches = splitFirstBatch(allTrending, normalizeVideo);
+      const isRecommendedFallback = allRecommended === null;
+      const recommendedSource = allRecommended ?? allTrending.slice(0, LIMIT);
+      const recommendedBatches = splitFirstBatch(
+        recommendedSource,
+        normalizeVideo,
+      );
+      const fallbackRecommendedIds = new Set(
+        recommendedBatches.firstBatch.map((video) => String(video.id)),
+      );
+      const trendingSource = isRecommendedFallback
+        ? allTrending.filter(
+            (video) =>
+              !fallbackRecommendedIds.has(
+                String(video._id || video.id),
+              ),
+          )
+        : allTrending;
+      const trendingBatches = splitFirstBatch(trendingSource, normalizeVideo);
       const latestBatches = splitFirstBatch(allLatest, normalizeVideo);
       const trendingShortBatches = splitFirstBatch(
         allTrendingShorts,
@@ -584,6 +610,7 @@ export default function DashboardScreen() {
 
       const dashboardData = {
         recommended: recommendedBatches.firstBatch,
+        recommendedFallback: isRecommendedFallback,
         trending: trendingBatches.firstBatch,
         latest: latestBatches.firstBatch,
         trendingShorts: trendingShortBatches.firstBatch,
@@ -726,13 +753,25 @@ export default function DashboardScreen() {
     if (loading) return [{ id: "loading", type: "loading" }];
 
     const sections = [
-      { id: "recommended", title: "Recommended for you", type: "recommended", data: recommended, isShorts: false },
+      {
+        id: "recommended",
+        title: recommendedFallback ? "Popular Videos" : "Recommended for you",
+        type: "recommended",
+        data: recommended,
+        isShorts: false,
+      },
       { id: "trending", title: "Trending Videos", type: "trending", data: trending, isShorts: false },
       { id: "latest", title: "Latest Videos", type: "latest", data: latest, isShorts: false },
       { id: "trending-shorts", title: "Trending Shorts", type: "shorts", data: trendingShorts, isShorts: true },
       { id: "subscriptions", title: "From your Subscriptions", type: "subscriptions", data: subscriptions, isShorts: false },
       { id: "top-shorts", title: "Top Shorts", type: "shorts", data: topShorts, isShorts: true },
-      { id: "more-recommended", title: "Recommended for you", type: "recommended", data: moreRecommended, isShorts: false },
+      {
+        id: "more-recommended",
+        title: recommendedFallback ? "Popular Videos" : "Recommended for you",
+        type: "recommended",
+        data: moreRecommended,
+        isShorts: false,
+      },
       { id: "more-trending", title: "Trending Videos", type: "trending", data: moreTrending, isShorts: false },
       { id: "more-latest", title: "Latest Videos", type: "latest", data: moreLatest, isShorts: false },
       { id: "more-trending-shorts", title: "Trending Shorts", type: "shorts", data: moreTrendingShorts, isShorts: true },
@@ -783,6 +822,7 @@ export default function DashboardScreen() {
   }, [
     loading,
     recommended,
+    recommendedFallback,
     trending,
     latest,
     trendingShorts,
@@ -848,7 +888,7 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <StatusBar barStyle="light-content" />
       <Navbar onMenuPress={() => {}} points={0} />
 
       <TopicChips
