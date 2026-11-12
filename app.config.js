@@ -80,6 +80,7 @@ module.exports = {
   ...app,
   expo: {
     ...appExpo,
+    icon: "./assets/vidbux.png",
     plugins: [
       ...(appExpo.plugins || []),
       ...expoPlugins,
@@ -87,14 +88,12 @@ module.exports = {
       [
         "expo-splash-screen",
         {
-          backgroundColor: "#0a0a0a",
-          android: {
-            drawable: {
-              icon: "./assets/transparent-splash.xml",
-            },
-          },
+          backgroundColor: "#f15a22",
+          image: "./assets/vidbux.png",
+          resizeMode: "contain",
           dark: {
-            backgroundColor: "#0a0a0a",
+            backgroundColor: "#f15a22",
+            image: "./assets/vidbux.png",
           },
         },
       ],
