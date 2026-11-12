@@ -81,6 +81,14 @@ module.exports = {
   expo: {
     ...appExpo,
     icon: "./assets/vidbux.png",
+    android: {
+      ...(appExpo.android || {}),
+      package: "com.vidbux.app",
+    },
+    ios: {
+      ...(appExpo.ios || {}),
+      bundleIdentifier: "com.vidbux.app",
+    },
     plugins: [
       ...(appExpo.plugins || []),
       ...expoPlugins,
@@ -100,6 +108,10 @@ module.exports = {
     ],
     extra: {
       ...(appExpo.extra || {}),
+      eas: {
+        ...((appExpo.extra && appExpo.extra.eas) || {}),
+        projectId: "68f1da7e-5915-40b1-b888-7eda879f57a3",
+      },
       apiBaseUrl:
         getEnv("API_BASE_URL") ||
         getEnv("EXPO_PUBLIC_API_BASE_URL") ||
